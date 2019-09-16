@@ -30,6 +30,7 @@ import (
 	"github.com/loadimpact/k6/lib"
 	"github.com/loadimpact/k6/lib/consts"
 	"github.com/loadimpact/k6/loader"
+	"github.com/loadimpact/k6/stats"
 	"github.com/loadimpact/k6/stats/cloud"
 	"github.com/loadimpact/k6/stats/csv"
 	"github.com/loadimpact/k6/stats/datadog"
@@ -126,7 +127,7 @@ func newCollector(collectorName, arg string, src *loader.SourceData, conf Config
 				}
 				config = config.Apply(cmdConfig)
 			}
-			return csv.New(afero.NewOsFs(), conf.SystemTags, config)
+			return csv.New(afero.NewOsFs(), conf.SystemTags.Map(), config)
 		default:
 			return nil, errors.Errorf("unknown output type: %s", collectorName)
 		}
@@ -139,9 +140,10 @@ func newCollector(collectorName, arg string, src *loader.SourceData, conf Config
 
 	// Check if all required tags are present
 	missingRequiredTags := []string{}
-	for reqTag := range collector.GetRequiredSystemTags() {
-		if !conf.SystemTags[reqTag] {
-			missingRequiredTags = append(missingRequiredTags, reqTag)
+	requiredTags := collector.GetRequiredSystemTags()
+	for _, tag := range stats.SystemTagSetValues() {
+		if requiredTags.Has(tag) && !conf.SystemTags.Has(tag) {
+			missingRequiredTags = append(missingRequiredTags, tag.String())
 		}
 	}
 	if len(missingRequiredTags) > 0 {
