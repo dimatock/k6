@@ -29,25 +29,28 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fatih/color"
 	"github.com/loadimpact/k6/lib"
 	"github.com/loadimpact/k6/stats"
 	"golang.org/x/text/unicode/norm"
 )
 
 const (
-	GroupPrefix   = "█"
-	DetailsPrefix = "↳"
+	groupPrefix   = "█"
+	detailsPrefix = "↳"
 
-	SuccMark = "✓"
-	FailMark = "✗"
+	succMark = "✓"
+	failMark = "✗"
 )
 
+// Errors which are exposed by ui.
 var (
 	ErrStatEmptyString            = errors.New("invalid stat, empty string")
 	ErrStatUnknownFormat          = errors.New("invalid stat, unknown format")
 	ErrPercentileStatInvalidValue = errors.New("invalid percentile stat value, accepts a number")
 )
 
+// TrendColumns is a list of TrendColumn.
 var TrendColumns = []TrendColumn{
 	{"avg", func(s *stats.TrendSink) float64 { return s.Avg }},
 	{"min", func(s *stats.TrendSink) float64 { return s.Min }},
@@ -57,6 +60,7 @@ var TrendColumns = []TrendColumn{
 	{"p(95)", func(s *stats.TrendSink) float64 { return s.P(0.95) }},
 }
 
+// TrendColumn represents data for trend column.
 type TrendColumn struct {
 	Key string
 	Get func(s *stats.TrendSink) float64
@@ -123,7 +127,7 @@ func generatePercentileTrendColumn(stat string) (func(s *stats.TrendSink) float6
 	return func(s *stats.TrendSink) float64 { return s.P(percentile) }, nil
 }
 
-// Returns the actual width of the string.
+// StrWidth returns the actual width of the string.
 func StrWidth(s string) (n int) {
 	var it norm.Iter
 	it.InitString(norm.NFKD, s)
@@ -165,26 +169,26 @@ type SummaryData struct {
 	Time    time.Duration
 }
 
-func SummarizeCheck(w io.Writer, indent string, check *lib.Check) {
-	mark := SuccMark
+func summarizeCheck(w io.Writer, indent string, check *lib.Check) {
+	mark := succMark
 	color := SuccColor
 	if check.Fails > 0 {
-		mark = FailMark
+		mark = failMark
 		color = FailColor
 	}
 	_, _ = color.Fprintf(w, "%s%s %s\n", indent, mark, check.Name)
 	if check.Fails > 0 {
 		_, _ = color.Fprintf(w, "%s %s  %d%% — %s %d / %s %d\n",
-			indent, DetailsPrefix,
+			indent, detailsPrefix,
 			int(100*(float64(check.Passes)/float64(check.Fails+check.Passes))),
-			SuccMark, check.Passes, FailMark, check.Fails,
+			succMark, check.Passes, failMark, check.Fails,
 		)
 	}
 }
 
-func SummarizeGroup(w io.Writer, indent string, group *lib.Group) {
+func summarizeGroup(w io.Writer, indent string, group *lib.Group) {
 	if group.Name != "" {
-		_, _ = fmt.Fprintf(w, "%s%s %s\n\n", indent, GroupPrefix, group.Name)
+		_, _ = fmt.Fprintf(w, "%s%s %s\n\n", indent, groupPrefix, group.Name)
 		indent = indent + "  "
 	}
 
@@ -193,7 +197,7 @@ func SummarizeGroup(w io.Writer, indent string, group *lib.Group) {
 		checkNames = append(checkNames, check.Name)
 	}
 	for _, name := range checkNames {
-		SummarizeCheck(w, indent, group.Checks[name])
+		summarizeCheck(w, indent, group.Checks[name])
 	}
 	if len(checkNames) > 0 {
 		_, _ = fmt.Fprintf(w, "\n")
@@ -204,11 +208,11 @@ func SummarizeGroup(w io.Writer, indent string, group *lib.Group) {
 		groupNames = append(groupNames, grp.Name)
 	}
 	for _, name := range groupNames {
-		SummarizeGroup(w, indent, group.Groups[name])
+		summarizeGroup(w, indent, group.Groups[name])
 	}
 }
 
-func NonTrendMetricValueForSum(t time.Duration, timeUnit string, m *stats.Metric) (data string, extra []string) {
+func nonTrendMetricValueForSum(t time.Duration, timeUnit string, m *stats.Metric) (data string, extra []string) {
 	switch sink := m.Sink.(type) {
 	case *stats.CounterSink:
 		value := sink.Value
@@ -238,37 +242,106 @@ func NonTrendMetricValueForSum(t time.Duration, timeUnit string, m *stats.Metric
 	}
 }
 
-func DisplayNameForMetric(m *stats.Metric) string {
+func displayNameForMetric(m *stats.Metric) string {
 	if m.Sub.Parent != "" {
 		return "{ " + m.Sub.Suffix + " }"
 	}
 	return m.Name
 }
 
-func IndentForMetric(m *stats.Metric) string {
+func indentForMetric(m *stats.Metric) string {
 	if m.Sub.Parent != "" {
 		return "  "
 	}
 	return ""
 }
 
-func SummarizeMetrics(w io.Writer, indent string, t time.Duration, timeUnit string, metrics map[string]*stats.Metric) {
-	names := []string{}
-	nameLenMax := 0
+func metricsMark(m *stats.Metric) (string, *color.Color) {
+	mark := " "
+	markColor := StdColor
+	if m.Tainted.Valid {
+		if m.Tainted.Bool {
+			mark = failMark
+			markColor = FailColor
+		} else {
+			mark = succMark
+			markColor = SuccColor
+		}
+	}
+	return mark, markColor
+}
 
+func updateExtraMaxLens(extra []string, extraMaxLens []int) {
+	for i, ex := range extra {
+		if l := StrWidth(ex); l > extraMaxLens[i] {
+			extraMaxLens[i] = l
+		}
+	}
+}
+
+func formatDataFromTrendCols(cols []string, trendColMaxLens []int) string {
+	tmp := make([]string, len(TrendColumns))
+	for i, val := range cols {
+		tmp[i] = TrendColumns[i].Key + "=" + ValueColor.Sprint(val) + strings.Repeat(" ", trendColMaxLens[i]-StrWidth(val))
+	}
+	return strings.Join(tmp, " ")
+}
+
+func formatDataFromExtra(extra []string, extraMaxLens []int) string {
+	switch len(extra) {
+	case 0:
+	case 1:
+		return " " + ExtraColor.Sprint(extra[0])
+	default:
+		parts := make([]string, len(extra))
+		for i, ex := range extra {
+			parts[i] = ExtraColor.Sprint(ex) + strings.Repeat(" ", extraMaxLens[i]-StrWidth(ex))
+		}
+		return " " + ExtraColor.Sprint(strings.Join(parts, " "))
+	}
+	return ""
+}
+
+func formatData(
+	name string,
+	trendCols []string,
+	trendColMaxLens []int,
+	values map[string]string,
+	valueMaxLen int,
+	extra []string,
+	extraMaxLens []int,
+) string {
+	fmtData := ""
+
+	if trendCols != nil {
+		return formatDataFromTrendCols(trendCols, trendColMaxLens)
+	}
+
+	value := values[name]
+	fmtData = ValueColor.Sprint(value) + strings.Repeat(" ", valueMaxLen-StrWidth(value))
+
+	if extraFmtData := formatDataFromExtra(extra, extraMaxLens); extraFmtData != "" {
+		fmtData += extraFmtData
+	}
+
+	return fmtData
+}
+
+func summarizeMetrics(w io.Writer, indent string, t time.Duration, timeUnit string, metrics map[string]*stats.Metric) {
+	names := make([]string, 0, len(metrics))
+	nameLenMax := 0
 	values := make(map[string]string)
 	valueMaxLen := 0
 	extras := make(map[string][]string)
 	extraMaxLens := make([]int, 2)
-
 	trendCols := make(map[string][]string)
 	trendColMaxLens := make([]int, len(TrendColumns))
 
 	for name, m := range metrics {
 		names = append(names, name)
 
-		// When calculating widths for metrics, account for the indentation on submetrics.
-		displayName := DisplayNameForMetric(m) + IndentForMetric(m)
+		// When calculating widths for metrics, account for the indentation on sub-metrics.
+		displayName := displayNameForMetric(m) + indentForMetric(m)
 		if l := StrWidth(displayName); l > nameLenMax {
 			nameLenMax = l
 		}
@@ -287,73 +360,35 @@ func SummarizeMetrics(w io.Writer, indent string, t time.Duration, timeUnit stri
 			continue
 		}
 
-		value, extra := NonTrendMetricValueForSum(t, timeUnit, m)
+		value, extra := nonTrendMetricValueForSum(t, timeUnit, m)
 		values[name] = value
 		if l := StrWidth(value); l > valueMaxLen {
 			valueMaxLen = l
 		}
 		extras[name] = extra
 		if len(extra) > 1 {
-			for i, ex := range extra {
-				if l := StrWidth(ex); l > extraMaxLens[i] {
-					extraMaxLens[i] = l
-				}
-			}
+			updateExtraMaxLens(extra, extraMaxLens)
 		}
 	}
 
 	sort.Strings(names)
-	tmpCols := make([]string, len(TrendColumns))
+
 	for _, name := range names {
 		m := metrics[name]
-
-		mark := " "
-		markColor := StdColor
-		if m.Tainted.Valid {
-			if m.Tainted.Bool {
-				mark = FailMark
-				markColor = FailColor
-			} else {
-				mark = SuccMark
-				markColor = SuccColor
-			}
-		}
-
-		fmtName := DisplayNameForMetric(m)
-		fmtIndent := IndentForMetric(m)
+		mark, markColor := metricsMark(m)
+		fmtName := displayNameForMetric(m)
+		fmtIndent := indentForMetric(m)
 		fmtName += GrayColor.Sprint(strings.Repeat(".", nameLenMax-StrWidth(fmtName)-StrWidth(fmtIndent)+3) + ":")
-
-		var fmtData string
-		if cols := trendCols[name]; cols != nil {
-			for i, val := range cols {
-				tmpCols[i] = TrendColumns[i].Key + "=" + ValueColor.Sprint(val) + strings.Repeat(" ", trendColMaxLens[i]-StrWidth(val))
-			}
-			fmtData = strings.Join(tmpCols, " ")
-		} else {
-			value := values[name]
-			fmtData = ValueColor.Sprint(value) + strings.Repeat(" ", valueMaxLen-StrWidth(value))
-
-			extra := extras[name]
-			switch len(extra) {
-			case 0:
-			case 1:
-				fmtData = fmtData + " " + ExtraColor.Sprint(extra[0])
-			default:
-				parts := make([]string, len(extra))
-				for i, ex := range extra {
-					parts[i] = ExtraColor.Sprint(ex) + strings.Repeat(" ", extraMaxLens[i]-StrWidth(ex))
-				}
-				fmtData = fmtData + " " + ExtraColor.Sprint(strings.Join(parts, " "))
-			}
-		}
+		fmtData := formatData(name, trendCols[name], trendColMaxLens, values, valueMaxLen, extras[name], extraMaxLens)
 		_, _ = fmt.Fprint(w, indent+fmtIndent+markColor.Sprint(mark)+" "+fmtName+" "+fmtData+"\n")
 	}
 }
 
-// Summarizes a dataset and returns whether the test run was considered a success.
+// Summarize summarizes a dataset in human readable format,
+// and returns whether the test run was considered a success.
 func Summarize(w io.Writer, indent string, data SummaryData) {
 	if data.Root != nil {
-		SummarizeGroup(w, indent+"    ", data.Root)
+		summarizeGroup(w, indent+"    ", data.Root)
 	}
-	SummarizeMetrics(w, indent+"  ", data.Time, data.Opts.SummaryTimeUnit.String, data.Metrics)
+	summarizeMetrics(w, indent+"  ", data.Time, data.Opts.SummaryTimeUnit.String, data.Metrics)
 }

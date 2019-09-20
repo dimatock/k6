@@ -449,12 +449,18 @@ a commandline interface for interacting with it.`,
 		// Print the end-of-test summary.
 		if !conf.NoSummary.Bool {
 			fprintf(stdout, "\n")
-			ui.Summarize(stdout, "", ui.SummaryData{
+			data := ui.SummaryData{
 				Opts:    conf.Options,
 				Root:    engine.Executor.GetRunner().GetDefaultGroup(),
 				Metrics: engine.Metrics,
 				Time:    engine.Executor.GetTime(),
-			})
+			}
+			// TODO: add json summary later
+			switch {
+			default:
+				ui.Summarize(stdout, "", data)
+			}
+
 			fprintf(stdout, "\n")
 		}
 
