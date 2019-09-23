@@ -21,6 +21,7 @@
 package ui
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -171,14 +172,14 @@ type SummaryData struct {
 
 func summarizeCheck(w io.Writer, indent string, check *lib.Check) {
 	mark := succMark
-	color := SuccColor
+	sColor := SuccColor
 	if check.Fails > 0 {
 		mark = failMark
-		color = FailColor
+		sColor = FailColor
 	}
-	_, _ = color.Fprintf(w, "%s%s %s\n", indent, mark, check.Name)
+	_, _ = sColor.Fprintf(w, "%s%s %s\n", indent, mark, check.Name)
 	if check.Fails > 0 {
-		_, _ = color.Fprintf(w, "%s %s  %d%% — %s %d / %s %d\n",
+		_, _ = sColor.Fprintf(w, "%s %s  %d%% — %s %d / %s %d\n",
 			indent, detailsPrefix,
 			int(100*(float64(check.Passes)/float64(check.Fails+check.Passes))),
 			succMark, check.Passes, failMark, check.Fails,
@@ -384,11 +385,54 @@ func summarizeMetrics(w io.Writer, indent string, t time.Duration, timeUnit stri
 	}
 }
 
-// Summarize summarizes a dataset in human readable format,
-// and returns whether the test run was considered a success.
+// Summarize summarizes a dataset in human readable format.
 func Summarize(w io.Writer, indent string, data SummaryData) {
 	if data.Root != nil {
 		summarizeGroup(w, indent+"    ", data.Root)
 	}
 	summarizeMetrics(w, indent+"  ", data.Time, data.Opts.SummaryTimeUnit.String, data.Metrics)
+}
+
+func newJsonEncoder(w io.Writer) *json.Encoder {
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "    ")
+	return encoder
+}
+func summarizeGroupJSON(w io.Writer, group *lib.Group) {
+	encoder := newJsonEncoder(w)
+	if err := encoder.Encode(group); err != nil {
+		panic(err)
+	}
+}
+
+func summarizeMetricsJSON(w io.Writer, t time.Duration, timeUnit string, metrics map[string]*stats.Metric) {
+	data := make(map[string]interface{})
+	for name, m := range metrics {
+		m.Sink.Calc()
+		if sink, ok := m.Sink.(*stats.TrendSink); ok {
+			data[name] = sink.Format(t)
+			continue
+		}
+		data[name] = m.Sink.Format(t)
+		_, extra := nonTrendMetricValueForSum(t, timeUnit, m)
+		if len(extra) > 1 {
+			extraData := make(map[string]interface{})
+			extraData["value"] = m.Sink.Format(t)["value"]
+			extraData["extra"] = extra
+			data[name] = extraData
+		}
+	}
+
+	encoder := newJsonEncoder(w)
+	if err := encoder.Encode(data); err != nil {
+		panic(err)
+	}
+}
+
+// SummarizeJSON summarizes a dataset in JSON format.
+func SummarizeJSON(w io.Writer, data SummaryData) {
+	if data.Root != nil {
+		summarizeGroupJSON(w, data.Root)
+	}
+	summarizeMetricsJSON(w, data.Time, data.Opts.SummaryTimeUnit.String, data.Metrics)
 }
