@@ -393,13 +393,13 @@ func Summarize(w io.Writer, indent string, data SummaryData) {
 	summarizeMetrics(w, indent+"  ", data.Time, data.Opts.SummaryTimeUnit.String, data.Metrics)
 }
 
-func newJsonEncoder(w io.Writer) *json.Encoder {
+func newJSONEncoder(w io.Writer) *json.Encoder {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "    ")
 	return encoder
 }
 func summarizeGroupJSON(w io.Writer, group *lib.Group) {
-	encoder := newJsonEncoder(w)
+	encoder := newJSONEncoder(w)
 	if err := encoder.Encode(group); err != nil {
 		panic(err)
 	}
@@ -423,7 +423,7 @@ func summarizeMetricsJSON(w io.Writer, t time.Duration, timeUnit string, metrics
 		}
 	}
 
-	encoder := newJsonEncoder(w)
+	encoder := newJSONEncoder(w)
 	if err := encoder.Encode(data); err != nil {
 		panic(err)
 	}
