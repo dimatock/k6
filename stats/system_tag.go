@@ -36,23 +36,10 @@ const (
 	TagIP
 )
 
-// DefaultSystemTagList includes all of the system tags emitted with metrics by default.
+// DefaultSystemTagSet includes all of the system tags emitted with metrics by default.
 // Other tags that are not enabled by default include: iter, vu, ocsp_status, ip
-//nolint:gochecknoglobals
-var DefaultSystemTagList = []string{
-	TagProto.String(),
-	TagSubProto.String(),
-	TagStatus.String(),
-	TagMethod.String(),
-	TagURL.String(),
-	TagName.String(),
-	TagGroup.String(),
-	TagCheck.String(),
-	TagCheck.String(),
-	TagError.String(),
-	TagErrorCode.String(),
-	TagTLSVersion.String(),
-}
+//nolint:gochecknoglobals,lll
+var DefaultSystemTagSet = TagProto | TagSubProto | TagStatus | TagMethod | TagURL | TagName | TagGroup | TagCheck | TagCheck | TagError | TagErrorCode | TagTLSVersion
 
 // Add adds a tag to tag set.
 func (ts *SystemTagSet) Add(tag SystemTagSet) {
