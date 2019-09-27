@@ -147,13 +147,11 @@ func getOptions(flags *pflag.FlagSet) (lib.Options, error) {
 	if err != nil {
 		return opts, err
 	}
-	for _, s := range trendStatStrings {
-		if err := ui.VerifyTrendColumnStat(s); err != nil {
-			return opts, errors.Wrapf(err, "stat '%s'", s)
-		}
-
-		opts.SummaryTrendStats = append(opts.SummaryTrendStats, s)
+	if _, summaryErr := ui.NewSummary(trendStatStrings); summaryErr != nil {
+		return opts, summaryErr
 	}
+
+	opts.SummaryTrendStats = append(opts.SummaryTrendStats, trendStatStrings...)
 
 	summaryTimeUnit, err := flags.GetString("summary-time-unit")
 	if err != nil {

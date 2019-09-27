@@ -62,6 +62,7 @@ const (
 	genericTimeoutErrorCode     = 102
 	genericEngineErrorCode      = 103
 	invalidConfigErrorCode      = 104
+	summaryErrorCode            = 105
 )
 
 var (
@@ -174,11 +175,6 @@ a commandline interface for interacting with it.`,
 		conf, cerr := deriveAndValidateConfig(conf)
 		if cerr != nil {
 			return ExitCode{cerr, invalidConfigErrorCode}
-		}
-
-		// If summary trend stats are defined, update the UI to reflect them
-		if len(conf.SummaryTrendStats) > 0 {
-			ui.UpdateTrendColumns(conf.SummaryTrendStats)
 		}
 
 		// Write options back to the runner too.
@@ -448,13 +444,16 @@ a commandline interface for interacting with it.`,
 
 		// Print the end-of-test summary.
 		if !conf.NoSummary.Bool {
+			s, err := ui.NewSummary(conf.SummaryTrendStats)
+			if err != nil {
+				// Shouldn't happen, config should be valid at this point
+				logrus.WithError(err).Error("Summary error")
+				return ExitCode{errors.New("summary error"), summaryErrorCode}
+			}
+
 			fprintf(stdout, "\n")
-			ui.Summarize(stdout, "", ui.SummaryData{
-				Opts:    conf.Options,
-				Root:    engine.Executor.GetRunner().GetDefaultGroup(),
-				Metrics: engine.Metrics,
-				Time:    engine.Executor.GetTime(),
-			})
+			s.Write(stdout, "", engine.Executor.GetRunner().GetDefaultGroup(),
+				engine.Executor.GetTime(), conf.SummaryTimeUnit.String, engine.Metrics)
 			fprintf(stdout, "\n")
 		}
 

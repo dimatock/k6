@@ -22,7 +22,7 @@ package ui
 
 import (
 	"bytes"
-	"strconv"
+	"fmt"
 	"testing"
 	"time"
 
@@ -31,28 +31,87 @@ import (
 	"gopkg.in/guregu/null.v3"
 )
 
-var verifyTests = []struct {
-	in  string
-	out error
-}{
-	{"avg", nil},
-	{"min", nil},
-	{"med", nil},
-	{"max", nil},
-	{"p(0)", nil},
-	{"p(90)", nil},
-	{"p(95)", nil},
-	{"p(99)", nil},
-	{"p(99.9)", nil},
-	{"p(99.9999)", nil},
-	{"count", nil},
-	{"nil", ErrStatUnknownFormat},
-	{" avg", ErrStatUnknownFormat},
-	{"avg ", ErrStatUnknownFormat},
-	{"", ErrStatEmptyString},
-}
+func TestSummary(t *testing.T) {
+	t.Run("NewSummary", func(t *testing.T) {
+		var newSummaryTests = []struct {
+			stats  []string
+			expErr error
+		}{
+			{[]string{}, nil},
+			{[]string{"avg", "min", "med", "max", "p(0)", "p(99)", "p(99.999)", "count"}, nil},
+			{[]string{"avg", "p(err)"}, ErrInvalidStat{"p(err)", errPercentileStatInvalidValue}},
+			{[]string{"nil", "p(err)"}, ErrInvalidStat{"nil", errStatUnknownFormat}},
+			{[]string{"p90"}, ErrInvalidStat{"p90", errStatUnknownFormat}},
+			{[]string{"p(90"}, ErrInvalidStat{"p(90", errStatUnknownFormat}},
+			{[]string{" avg"}, ErrInvalidStat{" avg", errStatUnknownFormat}},
+			{[]string{"avg "}, ErrInvalidStat{"avg ", errStatUnknownFormat}},
+			{[]string{"", "avg "}, ErrInvalidStat{"", errStatEmptyString}},
+		}
 
-var defaultTrendColumns = TrendColumns
+		for _, tc := range newSummaryTests {
+			tc := tc
+			t.Run(fmt.Sprintf("%v", tc.stats), func(t *testing.T) {
+				_, err := NewSummary(tc.stats)
+				assert.Equal(t, tc.expErr, err)
+			})
+		}
+	})
+
+	t.Run("Write", func(t *testing.T) {
+		var (
+			checksOut = "   ✓ checks......: 100.00% ✓ 3   ✗ 0  \n"
+			countOut  = "   ✗ http_reqs...: 3       3/s\n"
+			gaugeOut  = "     vus.........: 1       min=1 max=1\n"
+			trendOut  = "     my_trend....: avg=15ms min=10ms med=15ms max=20ms p(90)=19ms p(95)=19.5ms\n"
+		)
+
+		metrics := createTestMetrics()
+		testCases := []struct {
+			stats    []string
+			expected string
+		}{
+			{[]string{"avg", "min", "med", "max", "p(90)", "p(95)"}, checksOut + countOut + trendOut + gaugeOut},
+			{[]string{"count"}, checksOut + countOut + "     my_trend....: count=3\n" + gaugeOut},
+			{[]string{"avg", "count"}, checksOut + countOut + "     my_trend....: avg=15ms count=3\n" + gaugeOut},
+		}
+
+		for _, tc := range testCases {
+			tc := tc
+			t.Run(fmt.Sprintf("%v", tc.stats), func(t *testing.T) {
+				var w bytes.Buffer
+				s, _ := NewSummary(tc.stats)
+				s.Write(&w, " ", nil, time.Second, "", metrics)
+				assert.Equal(t, tc.expected, w.String())
+			})
+		}
+	})
+
+	t.Run("generateCustomTrendValueResolvers", func(t *testing.T) {
+		var customResolversTests = []struct {
+			stats      []string
+			percentile float64
+		}{
+			{[]string{"p(99)", "p(err)"}, 0.99},
+			{[]string{"p(none", "p(99.9)"}, 0.9990000000000001},
+			{[]string{"p(none", "p(99.99)"}, 0.9998999999999999},
+			{[]string{"p(none", "p(99.999)"}, 0.9999899999999999},
+		}
+
+		sink := createTestTrendSink(100)
+
+		for _, tc := range customResolversTests {
+			tc := tc
+			t.Run(fmt.Sprintf("%v", tc.stats), func(t *testing.T) {
+				s := Summary{trendColumns: tc.stats}
+				res := s.generateCustomTrendValueResolvers(tc.stats)
+				assert.Len(t, res, 1)
+				for k := range res {
+					assert.Equal(t, sink.P(tc.percentile), res[k](sink))
+				}
+			})
+		}
+	})
+}
 
 func createTestTrendSink(count int) *stats.TrendSink {
 	sink := stats.TrendSink{}
@@ -62,111 +121,6 @@ func createTestTrendSink(count int) *stats.TrendSink {
 	}
 
 	return &sink
-}
-
-func TestVerifyTrendColumnStat(t *testing.T) {
-	for _, testCase := range verifyTests {
-		err := VerifyTrendColumnStat(testCase.in)
-		assert.Equal(t, testCase.out, err)
-	}
-}
-
-func TestUpdateTrendColumns(t *testing.T) {
-	tcOld := TrendColumns
-	defer func() {
-		TrendColumns = tcOld
-	}()
-	sink := createTestTrendSink(100)
-
-	t.Run("No stats", func(t *testing.T) {
-		TrendColumns = defaultTrendColumns
-
-		UpdateTrendColumns(make([]string, 0))
-
-		assert.Equal(t, defaultTrendColumns, TrendColumns)
-	})
-
-	t.Run("One stat", func(t *testing.T) {
-		TrendColumns = defaultTrendColumns
-
-		UpdateTrendColumns([]string{"avg"})
-
-		assert.Exactly(t, 1, len(TrendColumns))
-		assert.Exactly(t,
-			sink.Avg,
-			TrendColumns[0].Get(sink))
-	})
-
-	t.Run("Multiple stats", func(t *testing.T) {
-		TrendColumns = defaultTrendColumns
-
-		UpdateTrendColumns([]string{"med", "max", "count"})
-
-		assert.Exactly(t, 3, len(TrendColumns))
-		assert.Exactly(t, sink.Med, TrendColumns[0].Get(sink))
-		assert.Exactly(t, sink.Max, TrendColumns[1].Get(sink))
-		assert.Exactly(t, float64(100), TrendColumns[2].Get(sink))
-	})
-
-	t.Run("Ignore invalid stats", func(t *testing.T) {
-		TrendColumns = defaultTrendColumns
-
-		UpdateTrendColumns([]string{"med", "max", "invalid"})
-
-		assert.Exactly(t, 2, len(TrendColumns))
-		assert.Exactly(t, sink.Med, TrendColumns[0].Get(sink))
-		assert.Exactly(t, sink.Max, TrendColumns[1].Get(sink))
-	})
-
-	t.Run("Percentile stats", func(t *testing.T) {
-		TrendColumns = defaultTrendColumns
-
-		UpdateTrendColumns([]string{"p(99.9999)"})
-
-		assert.Exactly(t, 1, len(TrendColumns))
-		assert.Exactly(t, sink.P(0.999999), TrendColumns[0].Get(sink))
-	})
-}
-
-func TestGeneratePercentileTrendColumn(t *testing.T) {
-	sink := createTestTrendSink(100)
-
-	t.Run("Happy path", func(t *testing.T) {
-		colFunc, err := generatePercentileTrendColumn("p(99)")
-
-		assert.NotNil(t, colFunc)
-		assert.Exactly(t, sink.P(0.99), colFunc(sink))
-		assert.NotEqual(t, sink.P(0.98), colFunc(sink))
-		assert.Nil(t, err)
-	})
-
-	t.Run("Empty stat", func(t *testing.T) {
-		colFunc, err := generatePercentileTrendColumn("")
-
-		assert.Nil(t, colFunc)
-		assert.Exactly(t, err, ErrStatEmptyString)
-	})
-
-	t.Run("Invalid format", func(t *testing.T) {
-		colFunc, err := generatePercentileTrendColumn("p90")
-
-		assert.Nil(t, colFunc)
-		assert.Exactly(t, err, ErrStatUnknownFormat)
-	})
-
-	t.Run("Invalid format 2", func(t *testing.T) {
-		colFunc, err := generatePercentileTrendColumn("p(90")
-
-		assert.Nil(t, colFunc)
-		assert.Exactly(t, err, ErrStatUnknownFormat)
-	})
-
-	t.Run("Invalid float", func(t *testing.T) {
-		colFunc, err := generatePercentileTrendColumn("p(a)")
-
-		assert.Nil(t, colFunc)
-		assert.Exactly(t, err, ErrPercentileStatInvalidValue)
-	})
 }
 
 func createTestMetrics() map[string]*stats.Metric {
@@ -192,41 +146,4 @@ func createTestMetrics() map[string]*stats.Metric {
 	metrics["my_trend"] = &stats.Metric{Name: "my_trend", Type: stats.Trend, Contains: stats.Time, Sink: sink}
 
 	return metrics
-}
-
-func TestSummarizeMetrics(t *testing.T) {
-	tcOld := TrendColumns
-	defer func() {
-		TrendColumns = tcOld
-	}()
-
-	trendCountColumn := TrendColumn{"count", func(s *stats.TrendSink) float64 { return float64(s.Count) }}
-
-	var (
-		checksOut = " ✓ checks......: 100.00% ✓ 3   ✗ 0  \n"
-		countOut  = " ✗ http_reqs...: 3       3/s\n"
-		gaugeOut  = "   vus.........: 1       min=1 max=1\n"
-		trendOut  = "   my_trend....: avg=15ms min=10ms med=15ms max=20ms p(90)=19ms p(95)=19.5ms\n"
-	)
-
-	metrics := createTestMetrics()
-	testCases := []struct {
-		columns  []TrendColumn
-		expected string
-	}{
-		{tcOld, checksOut + countOut + trendOut + gaugeOut},
-		{[]TrendColumn{trendCountColumn}, checksOut + countOut + "   my_trend....: count=3\n" + gaugeOut},
-		{[]TrendColumn{TrendColumns[0], trendCountColumn},
-			checksOut + countOut + "   my_trend....: avg=15ms count=3\n" + gaugeOut},
-	}
-
-	for i, tc := range testCases {
-		tc := tc
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			TrendColumns = tc.columns
-			var w bytes.Buffer
-			SummarizeMetrics(&w, " ", time.Second, "", metrics)
-			assert.Equal(t, tc.expected, w.String())
-		})
-	}
 }
