@@ -1403,7 +1403,7 @@ func TestStuffNotPanicking(t *testing.T) {
 					() => doc.find('p').each("wat"),
 					() => doc.find('p').map(),
 					() => doc.find('p').map("wat"),
-					() => ws.connect("WSBIN_URL/ws-echo"),
+					() => ws.connect("WSBIN_URL/ws-echo-invalid"),
 				];
 
 				testCases.forEach(function(fn, idx) {

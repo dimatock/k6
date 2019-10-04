@@ -535,7 +535,7 @@ func TestSentReceivedMetrics(t *testing.T) {
 		{tr(`import ws from "k6/ws";
 			let data = "0123456789".repeat(100);
 			export default function() {
-				ws.connect("WSBIN_URL/ws-echo", null, function (socket) {
+				ws.connect("WSBIN_URL/ws-echo-invalid", null, function (socket) {
 					socket.on('open', function open() {
 						socket.send(data);
 					});
@@ -662,7 +662,7 @@ func TestRunTags(t *testing.T) {
 			})
 
 			group("websockets", function() {
-				var response = ws.connect("WSBIN_URL/ws-echo", params, function (socket) {
+				var response = ws.connect("WSBIN_URL/ws-echo-invalid", params, function (socket) {
 					socket.on('open', function open() {
 						console.log('ws open and say hello');
 						socket.send("hello");

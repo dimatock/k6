@@ -262,9 +262,9 @@ func (*WS) Connect(ctx context.Context, url string, args ...goja.Value) (*WSHTTP
 		case readErr := <-readErrChan:
 			socket.handleEvent("error", rt.ToValue(readErr))
 
-		case readClose := <-readCloseChan:
+		case <-readCloseChan:
 			// handle server close
-			socket.handleEvent("close", rt.ToValue(readClose))
+			socket.Close()
 
 		case scheduledFn := <-socket.scheduled:
 			if _, err := scheduledFn(goja.Undefined()); err != nil {
@@ -436,7 +436,7 @@ func (s *Socket) closeConnection(code int) error {
 			websocket.FormatCloseMessage(code, ""),
 			time.Now().Add(writeWait),
 		)
-		if err != nil {
+		if err != nil && err != websocket.ErrCloseSent {
 			// Just call the handler, we'll try to close the connection anyway
 			s.handleEvent("error", rt.ToValue(err))
 		}
@@ -445,7 +445,7 @@ func (s *Socket) closeConnection(code int) error {
 		s.handleEvent("close", rt.ToValue(code))
 		_ = s.conn.Close()
 
-		// Stops the main control loop
+		// Stop the main control loop
 		close(s.done)
 	})
 
@@ -454,22 +454,19 @@ func (s *Socket) closeConnection(code int) error {
 
 // Wraps conn.ReadMessage in a channel
 func readPump(conn *websocket.Conn, readChan chan []byte, errorChan chan error, closeChan chan int) {
-	defer func() { _ = conn.Close() }()
-
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
-
-			if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
-				closeChan <- err.(*websocket.CloseError).Code
-			} else if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
-				// Emit the error if it is not CloseNormalClosure
-				// and the error is not  originated from closing the socket ourselves with `CloseGoingAway`
+			if websocket.IsUnexpectedCloseError(
+				err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				// Report an unexpected closure
 				errorChan <- err
 			}
-
-			//CloseGoingAway errors are ignored
-			return
+			code := websocket.CloseGoingAway
+			if e, ok := err.(*websocket.CloseError); ok {
+				code = e.Code
+			}
+			closeChan <- code
 		}
 
 		readChan <- message
