@@ -467,6 +467,7 @@ func readPump(conn *websocket.Conn, readChan chan []byte, errorChan chan error, 
 				code = e.Code
 			}
 			closeChan <- code
+			return
 		}
 
 		readChan <- message
