@@ -269,9 +269,8 @@ func (*WS) Connect(ctx context.Context, url string, args ...goja.Value) (*WSHTTP
 		case readErr := <-readErrChan:
 			socket.handleEvent("error", rt.ToValue(readErr))
 
-		case <-readCloseChan:
-			// handle server close
-			socket.Close()
+		case code := <-readCloseChan:
+			_ = socket.closeConnection(code)
 
 		case scheduledFn := <-socket.scheduled:
 			if _, err := scheduledFn(goja.Undefined()); err != nil {
