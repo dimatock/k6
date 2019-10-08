@@ -431,7 +431,8 @@ func (s *Socket) Close(args ...goja.Value) {
 	_ = s.closeConnection(code)
 }
 
-// Attempts to close the websocket gracefully
+// closeConnection cleanly closes the WebSocket connection.
+// Returns an error if sending the close control frame fails.
 func (s *Socket) closeConnection(code int) error {
 	var err error
 
@@ -443,12 +444,13 @@ func (s *Socket) closeConnection(code int) error {
 			time.Now().Add(writeWait),
 		)
 		if err != nil {
-			// Just call the handler, we'll try to close the connection anyway
+			// Call the user-defined error handler
 			s.handleEvent("error", rt.ToValue(err))
 		}
 
-		// trigger `close` event when the client closes the connection
+		// Call the user-defined close handler
 		s.handleEvent("close", rt.ToValue(code))
+
 		_ = s.conn.Close()
 
 		// Stop the main control loop
