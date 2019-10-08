@@ -112,30 +112,30 @@ func TestSession(t *testing.T) {
 
 	t.Run("connect_ws", func(t *testing.T) {
 		_, err := common.RunString(rt, sr(`
-		let res = ws.connect("WSBIN_URL/ws-echo-invalid", function(socket){
+		let res = ws.connect("WSBIN_URL/ws-echo", function(socket){
 			socket.close()
 		});
 		if (res.status != 101) { throw new Error("connection failed with status: " + res.status); }
 		`))
 		assert.NoError(t, err)
 	})
-	assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSBIN_URL/ws-echo-invalid"), 101, "")
+	assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSBIN_URL/ws-echo"), 101, "")
 
 	t.Run("connect_wss", func(t *testing.T) {
 		_, err := common.RunString(rt, sr(`
-		let res = ws.connect("WSSBIN_URL/ws-echo-invalid", function(socket){
+		let res = ws.connect("WSSBIN_URL/ws-echo", function(socket){
 			socket.close()
 		});
 		if (res.status != 101) { throw new Error("TLS connection failed with status: " + res.status); }
 		`))
 		assert.NoError(t, err)
 	})
-	assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSSBIN_URL/ws-echo-invalid"), 101, "")
+	assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSSBIN_URL/ws-echo"), 101, "")
 
 	t.Run("open", func(t *testing.T) {
 		_, err := common.RunString(rt, sr(`
 		let opened = false;
-		let res = ws.connect("WSBIN_URL/ws-echo-invalid", function(socket){
+		let res = ws.connect("WSBIN_URL/ws-echo", function(socket){
 			socket.on("open", function() {
 				opened = true;
 				socket.close()
@@ -145,11 +145,11 @@ func TestSession(t *testing.T) {
 		`))
 		assert.NoError(t, err)
 	})
-	assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSBIN_URL/ws-echo-invalid"), 101, "")
+	assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSBIN_URL/ws-echo"), 101, "")
 
 	t.Run("send_receive", func(t *testing.T) {
 		_, err := common.RunString(rt, sr(`
-		let res = ws.connect("WSBIN_URL/ws-echo-invalid", function(socket){
+		let res = ws.connect("WSBIN_URL/ws-echo", function(socket){
 			socket.on("open", function() {
 				socket.send("test")
 			})
@@ -165,14 +165,14 @@ func TestSession(t *testing.T) {
 	})
 
 	samplesBuf := stats.GetBufferedSamples(samples)
-	assertSessionMetricsEmitted(t, samplesBuf, "", sr("WSBIN_URL/ws-echo-invalid"), 101, "")
-	assertMetricEmitted(t, metrics.WSMessagesSent, samplesBuf, sr("WSBIN_URL/ws-echo-invalid"))
-	assertMetricEmitted(t, metrics.WSMessagesReceived, samplesBuf, sr("WSBIN_URL/ws-echo-invalid"))
+	assertSessionMetricsEmitted(t, samplesBuf, "", sr("WSBIN_URL/ws-echo"), 101, "")
+	assertMetricEmitted(t, metrics.WSMessagesSent, samplesBuf, sr("WSBIN_URL/ws-echo"))
+	assertMetricEmitted(t, metrics.WSMessagesReceived, samplesBuf, sr("WSBIN_URL/ws-echo"))
 
 	t.Run("interval", func(t *testing.T) {
 		_, err := common.RunString(rt, sr(`
 		let counter = 0;
-		let res = ws.connect("WSBIN_URL/ws-echo-invalid", function(socket){
+		let res = ws.connect("WSBIN_URL/ws-echo", function(socket){
 			socket.setInterval(function () {
 				counter += 1;
 				if (counter > 2) { socket.close(); }
@@ -182,13 +182,13 @@ func TestSession(t *testing.T) {
 		`))
 		assert.NoError(t, err)
 	})
-	assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSBIN_URL/ws-echo-invalid"), 101, "")
+	assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSBIN_URL/ws-echo"), 101, "")
 
 	t.Run("timeout", func(t *testing.T) {
 		_, err := common.RunString(rt, sr(`
 		let start = new Date().getTime();
 		let ellapsed = new Date().getTime() - start;
-		let res = ws.connect("WSBIN_URL/ws-echo-invalid", function(socket){
+		let res = ws.connect("WSBIN_URL/ws-echo", function(socket){
 			socket.setTimeout(function () {
 				ellapsed = new Date().getTime() - start;
 				socket.close();
@@ -200,12 +200,12 @@ func TestSession(t *testing.T) {
 		`))
 		assert.NoError(t, err)
 	})
-	assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSBIN_URL/ws-echo-invalid"), 101, "")
+	assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSBIN_URL/ws-echo"), 101, "")
 
 	t.Run("ping", func(t *testing.T) {
 		_, err := common.RunString(rt, sr(`
 		let pongReceived = false;
-		let res = ws.connect("WSBIN_URL/ws-echo-invalid", function(socket){
+		let res = ws.connect("WSBIN_URL/ws-echo", function(socket){
 			socket.on("open", function(data) {
 				socket.ping();
 			});
@@ -223,15 +223,15 @@ func TestSession(t *testing.T) {
 	})
 
 	samplesBuf = stats.GetBufferedSamples(samples)
-	assertSessionMetricsEmitted(t, samplesBuf, "", sr("WSBIN_URL/ws-echo-invalid"), 101, "")
-	assertMetricEmitted(t, metrics.WSPing, samplesBuf, sr("WSBIN_URL/ws-echo-invalid"))
+	assertSessionMetricsEmitted(t, samplesBuf, "", sr("WSBIN_URL/ws-echo"), 101, "")
+	assertMetricEmitted(t, metrics.WSPing, samplesBuf, sr("WSBIN_URL/ws-echo"))
 
 	t.Run("multiple_handlers", func(t *testing.T) {
 		_, err := common.RunString(rt, sr(`
 		let pongReceived = false;
 		let otherPongReceived = false;
 
-		let res = ws.connect("WSBIN_URL/ws-echo-invalid", function(socket){
+		let res = ws.connect("WSBIN_URL/ws-echo", function(socket){
 			socket.on("open", function(data) {
 				socket.ping();
 			});
@@ -257,13 +257,13 @@ func TestSession(t *testing.T) {
 	})
 
 	samplesBuf = stats.GetBufferedSamples(samples)
-	assertSessionMetricsEmitted(t, samplesBuf, "", sr("WSBIN_URL/ws-echo-invalid"), 101, "")
-	assertMetricEmitted(t, metrics.WSPing, samplesBuf, sr("WSBIN_URL/ws-echo-invalid"))
+	assertSessionMetricsEmitted(t, samplesBuf, "", sr("WSBIN_URL/ws-echo"), 101, "")
+	assertMetricEmitted(t, metrics.WSPing, samplesBuf, sr("WSBIN_URL/ws-echo"))
 
 	t.Run("client_close", func(t *testing.T) {
 		_, err := common.RunString(rt, sr(`
 		let closed = false;
-		let res = ws.connect("WSBIN_URL/ws-echo-invalid", function(socket){
+		let res = ws.connect("WSBIN_URL/ws-echo", function(socket){
 			socket.on("open", function() {
 							socket.close()
 			})
@@ -306,7 +306,7 @@ func TestSession(t *testing.T) {
 		})
 	}
 
-	assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSBIN_URL/ws-echo-invalid"), 101, "")
+	assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSBIN_URL/ws-echo"), 101, "")
 }
 
 func TestErrors(t *testing.T) {
@@ -390,7 +390,7 @@ func TestErrors(t *testing.T) {
 	t.Run("error on close", func(t *testing.T) {
 		_, err := common.RunString(rt, sr(`
 		var closed = false;
-		let res = ws.connect("WSBIN_URL/ws-close-invalid", function(socket){
+		let res = ws.connect("WSBIN_URL/ws-close", function(socket){
 			socket.on('open', function open() {
 				socket.setInterval(function timeout() {
 				  socket.ping();
@@ -413,7 +413,7 @@ func TestErrors(t *testing.T) {
 		});
 		`))
 		assert.NoError(t, err)
-		assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSBIN_URL/ws-close-invalid"), 101, "")
+		assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSBIN_URL/ws-close"), 101, "")
 	})
 }
 
@@ -454,7 +454,7 @@ func TestSystemTags(t *testing.T) {
 				expectedTag: true,
 			}
 			_, err := common.RunString(rt, sr(`
-			let res = ws.connect("WSBIN_URL/ws-echo-invalid", function(socket){
+			let res = ws.connect("WSBIN_URL/ws-echo", function(socket){
 				socket.on("open", function() {
 					socket.send("test")
 				})
@@ -512,20 +512,20 @@ func TestTLSConfig(t *testing.T) {
 		}
 
 		_, err := common.RunString(rt, sr(`
-		let res = ws.connect("WSSBIN_URL/ws-close-invalid", function(socket){
+		let res = ws.connect("WSSBIN_URL/ws-close", function(socket){
 			socket.close()
 		});
 		if (res.status != 101) { throw new Error("TLS connection failed with status: " + res.status); }
 		`))
 		assert.NoError(t, err)
 	})
-	assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSSBIN_URL/ws-close-invalid"), 101, "")
+	assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSSBIN_URL/ws-close"), 101, "")
 
 	t.Run("custom certificates", func(t *testing.T) {
 		state.TLSConfig = tb.TLSClientConfig
 
 		_, err := common.RunString(rt, sr(`
-			let res = ws.connect("WSSBIN_URL/ws-close-invalid", function(socket){
+			let res = ws.connect("WSSBIN_URL/ws-close", function(socket){
 				socket.close()
 			});
 			if (res.status != 101) {
@@ -534,5 +534,5 @@ func TestTLSConfig(t *testing.T) {
 		`))
 		assert.NoError(t, err)
 	})
-	assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSSBIN_URL/ws-close-invalid"), 101, "")
+	assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSSBIN_URL/ws-close"), 101, "")
 }
