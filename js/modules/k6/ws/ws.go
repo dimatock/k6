@@ -223,6 +223,13 @@ func (*WS) Connect(ctx context.Context, url string, args ...goja.Value) (*WSHTTP
 	// The connection is now open, emit the event
 	socket.handleEvent("open")
 
+	// Make the default close handler a noop to avoid duplicate closes,
+	// since we use custom closing logic to call user's event
+	// handlers and for cleanup. See closeConnection.
+	// closeConnection is not set directly as a handler here to
+	// avoid race conditions when calling the Goja runtime.
+	conn.SetCloseHandler(func(code int, text string) error { return nil })
+
 	// Pass ping/pong events through the main control loop
 	pingChan := make(chan string)
 	pongChan := make(chan string)
@@ -436,7 +443,7 @@ func (s *Socket) closeConnection(code int) error {
 			websocket.FormatCloseMessage(code, ""),
 			time.Now().Add(writeWait),
 		)
-		if err != nil && err != websocket.ErrCloseSent {
+		if err != nil {
 			// Just call the handler, we'll try to close the connection anyway
 			s.handleEvent("error", rt.ToValue(err))
 		}
