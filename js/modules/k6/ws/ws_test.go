@@ -275,6 +275,7 @@ func TestSession(t *testing.T) {
 		`))
 		assert.NoError(t, err)
 	})
+	assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSBIN_URL/ws-echo"), 101, "")
 
 	serverCloseTests := []struct {
 		name     string
@@ -305,8 +306,6 @@ func TestSession(t *testing.T) {
 			assert.NoError(t, err)
 		})
 	}
-
-	assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSBIN_URL/ws-echo"), 101, "")
 }
 
 func TestErrors(t *testing.T) {
