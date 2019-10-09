@@ -23,10 +23,14 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/dop251/goja"
+	"github.com/gorilla/websocket"
 	"github.com/loadimpact/k6/js/common"
 	"github.com/loadimpact/k6/lib"
 	"github.com/loadimpact/k6/lib/metrics"
@@ -534,4 +538,54 @@ func TestTLSConfig(t *testing.T) {
 		assert.NoError(t, err)
 	})
 	assertSessionMetricsEmitted(t, stats.GetBufferedSamples(samples), "", sr("WSSBIN_URL/ws-close"), 101, "")
+}
+
+func TestReadPump(t *testing.T) {
+	var closeCode int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := (&websocket.Upgrader{}).Upgrade(w, r, w.Header())
+		assert.NoError(t, err)
+		closeMsg := websocket.FormatCloseMessage(closeCode, "")
+		_ = conn.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(time.Second))
+	}))
+	defer srv.Close()
+
+	closeCodes := []int{websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseInternalServerErr}
+
+	numAsserts := 0
+	srvURL := "ws://" + srv.Listener.Addr().String()
+
+	// Ensure readPump returns the response close code sent by the server
+	for _, code := range closeCodes {
+		closeCode = code
+		conn, resp, err := websocket.DefaultDialer.Dial(srvURL, nil)
+		assert.NoError(t, err)
+		defer func() {
+			_ = resp.Body.Close()
+			_ = conn.Close()
+		}()
+
+		msgChan := make(chan []byte)
+		errChan := make(chan error)
+		closeChan := make(chan int)
+		go readPump(conn, msgChan, errChan, closeChan)
+
+	readChans:
+		for {
+			select {
+			case responseCode := <-closeChan:
+				assert.Equal(t, code, responseCode)
+				numAsserts++
+				break readChans
+			case <-errChan:
+				continue
+			case <-time.After(time.Second):
+				t.Errorf("Read timed out")
+				break readChans
+			}
+		}
+	}
+
+	// Ensure all close code asserts passed
+	assert.Equal(t, numAsserts, len(closeCodes))
 }
